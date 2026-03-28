@@ -100,6 +100,129 @@
 
 ---
 
+## Architecture full-stack (Vertical Slices + Hybride pragmatique)
+
+Next.js est volontairement agnostique sur l'architecture. Le pattern ci-dessous combine **Vertical Slices** (chaque feature est autonome) avec une organisation hybride inspirée de FSD et DDD, adaptée aux contraintes de l'App Router.
+
+### Structure recommandée
+
+```
+app/                              # Routing UNIQUEMENT — pages fines
+├── (public)/
+│   └── page.tsx                  # Compose depuis src/features/
+├── (dashboard)/
+│   ├── layout.tsx
+│   ├── campaigns/
+│   │   ├── page.tsx              # Import depuis features/campaigns
+│   │   ├── [id]/
+│   │   │   └── page.tsx
+│   │   ├── loading.tsx
+│   │   └── error.tsx
+│   └── bilans/
+│       └── page.tsx
+├── api/                          # Route Handlers (intégrations externes)
+│   ├── webhooks/
+│   └── auth/[...nextauth]/
+└── layout.tsx
+
+src/
+├── features/                     # Vertical slices par feature
+│   ├── campaigns/
+│   │   ├── components/           # UI spécifique à la feature
+│   │   │   ├── campaign-list.tsx
+│   │   │   ├── campaign-card.tsx
+│   │   │   └── create-campaign-dialog.tsx
+│   │   ├── actions/              # Server Actions (THIN)
+│   │   │   └── create-campaign.ts
+│   │   ├── services/             # Logique métier (THICK, testable)
+│   │   │   ├── campaign.service.ts
+│   │   │   └── campaign.service.test.ts
+│   │   ├── queries/              # Data fetching (Server Components)
+│   │   │   └── get-campaigns.ts
+│   │   ├── schemas/              # Validation Zod
+│   │   │   └── campaign.schema.ts
+│   │   ├── types.ts
+│   │   └── index.ts              # Barrel — API publique de la feature
+│   └── bilans/
+│       └── ...
+│
+├── entities/                     # Modèles de domaine partagés
+│   ├── campaign/
+│   │   ├── types.ts              # Types/interfaces du domaine
+│   │   └── utils.ts              # Helpers purement liés au domaine
+│   └── user/
+│       └── types.ts
+│
+├── shared/                       # Code réutilisable cross-feature
+│   ├── ui/                       # shadcn/ui + composants design system
+│   ├── hooks/                    # Hooks partagés (useDebounce, etc.)
+│   ├── lib/                      # Utilitaires (cn(), formatDate, etc.)
+│   └── config/                   # Constantes, env validation (Zod)
+│
+└── infrastructure/               # Services externes et adapters
+    ├── database/                 # Prisma client, helpers
+    ├── auth/                     # Config Auth.js (auth.ts)
+    └── api-clients/              # Clients API externes (GAM, Stripe, etc.)
+```
+
+### Règles clés
+
+- **`app/` = routing seulement.** Les `page.tsx` sont des compositions fines qui importent depuis `src/features/`. Pas de logique métier dans `app/`.
+- **Thin Actions, Thick Services.** Les Server Actions valident (Zod), appellent un service, et revalidate. La logique métier vit dans `services/` — testable, réutilisable (webhooks, cron, API routes).
+- **Un barrel `index.ts` par feature.** Il expose l'API publique du slice. Les autres features n'importent que via le barrel, jamais dans les fichiers internes.
+- **Pas d'imports cross-features.** Si deux features partagent un type ou une logique, l'extraire dans `entities/` ou `shared/`.
+- **`entities/` = domaine pur.** Types, interfaces, et helpers qui décrivent le métier sans dépendre de React ou Next.js.
+- **`infrastructure/` = le monde extérieur.** DB, auth, APIs tierces. Isolé pour être substituable.
+
+### Thin Action → Thick Service (exemple)
+
+```typescript
+// src/features/campaigns/actions/create-campaign.ts
+"use server"
+
+import { auth } from "@/infrastructure/auth"
+import { createCampaignSchema } from "../schemas/campaign.schema"
+import { createCampaign } from "../services/campaign.service"
+import { revalidatePath } from "next/cache"
+
+export async function createCampaignAction(formData: FormData) {
+  const session = await auth()
+  if (!session) throw new Error("Unauthorized")
+
+  const data = createCampaignSchema.parse(Object.fromEntries(formData))
+  await createCampaign(data, session.user.id)  // ← toute la logique est ici
+  revalidatePath("/campaigns")
+}
+```
+
+```typescript
+// src/features/campaigns/services/campaign.service.ts
+import { prisma } from "@/infrastructure/database"
+import type { CreateCampaignInput } from "../schemas/campaign.schema"
+
+export async function createCampaign(data: CreateCampaignInput, userId: string) {
+  // Logique métier pure — testable sans Next.js
+  return prisma.campaign.create({
+    data: { ...data, createdById: userId },
+  })
+}
+```
+
+### Quand utiliser quoi
+
+| Besoin | Emplacement |
+|---|---|
+| UI spécifique à une feature | `src/features/<name>/components/` |
+| Mutation depuis un formulaire | `src/features/<name>/actions/` → `services/` |
+| Data fetching (Server Component) | `src/features/<name>/queries/` |
+| Type partagé entre features | `src/entities/<domain>/types.ts` |
+| Composant UI générique | `src/shared/ui/` |
+| Hook réutilisable | `src/shared/hooks/` |
+| Client API externe | `src/infrastructure/api-clients/` |
+| Config DB / Prisma | `src/infrastructure/database/` |
+
+---
+
 ## Principes transversaux
 
 1. **Colocation** — garder les fichiers proches de là où ils sont utilisés.
