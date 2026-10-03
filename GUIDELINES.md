@@ -1,238 +1,237 @@
+> ⚠️ **ARCHIVÉ le 03/10/2026.** Ce document n'est plus maintenu (il date de mars 2026 : React Compiler « expérimental », Prisma 6…).
+> Source unique à jour : le skill Claude `dev-standards` (`~/.claude/skills/dev-standards/`, repo `claude-config`).
+
 # Dev Standards & Best Practices
 
-> **Avertissement** : Ce document reflète les best practices au moment de sa rédaction (mars 2026). Les écosystèmes évoluent vite — **toujours vérifier rapidement** que ces recommandations sont encore à jour avant de les appliquer aveuglément. En cas de doute, la doc officielle fait foi.
+> Ce document definit les standards a suivre. Il est aligne sur les conventions **Next.js 16 + React 19 + Tailwind v4 + shadcn v4** (mars 2026). En cas de doute, la doc officielle fait foi : [nextjs.org/docs](https://nextjs.org/docs), [react.dev](https://react.dev).
 
 ---
 
-## Next.js 15 (App Router)
+## Structure du projet
 
-- **App Router par défaut** — ne pas utiliser Pages Router pour les nouveaux projets.
-- **Server Components par défaut** — n'ajouter `"use client"` que quand c'est nécessaire (state, effects, event handlers, browser APIs).
-- **Data fetching** : fetch dans les Server Components avec `async/await` directement dans le composant. Pas de `useEffect` pour charger des données. Attention : les fetch sont **non-cachés par défaut** depuis Next 15 — opt-in explicite avec `cache: 'force-cache'` si besoin.
-- **APIs de requête async** : `cookies()`, `headers()`, `params`, `searchParams` sont **async** depuis Next 15 — toujours les `await`.
-- **Server Actions** pour les mutations (formulaires, actions DB). Utiliser avec `useActionState` + `useFormStatus` + le composant `<Form>` de `next/form` pour le progressive enhancement.
-- **Route Handlers** (`app/api/`) pour les endpoints API REST. Typer `NextRequest` / `NextResponse`.
-- **Metadata** : utiliser `generateMetadata()` ou l'export `metadata` pour le SEO, pas de `<Head>` manuel.
-- **Loading / Error UI** : `loading.tsx`, `error.tsx`, `not-found.tsx` par segment de route.
-- **Images** : toujours `next/image` avec `width`/`height` ou `fill`. Jamais de `<img>` brut.
-- **Fonts** : `next/font/google` ou `next/font/local` dans le layout racine.
-- **Turbopack** : utiliser `next dev --turbo` pour un dev server plus rapide (stable depuis Next 15).
-- **`after()`** : pour exécuter du code après l'envoi de la réponse (logging, analytics) sans bloquer.
-- **Config TypeScript** : `next.config.ts` supporté nativement.
-- **Parallel Routes & Intercepting Routes** quand le UX le justifie (modales, dashboards).
+Le projet suit la structure **stock Next.js 16 + shadcn v4** :
 
-## React 19
+```
+/                              # Racine — PAS de src/
+├── app/                       # App Router — routing + pages fines
+│   ├── globals.css            # @import "tailwindcss" + @theme inline
+│   ├── layout.tsx             # Root layout (Server Component)
+│   ├── page.tsx               # Page d'accueil
+│   ├── (dashboard)/           # Route group pour les pages auth
+│   │   ├── rapports/
+│   │   │   ├── page.tsx       # SC fin → importe depuis features/
+│   │   │   ├── loading.tsx
+│   │   │   └── error.tsx
+│   │   └── brief/
+│   │       └── page.tsx
+│   └── api/                   # Route Handlers (API REST externes)
+├── features/                  # Vertical slices par domaine
+│   ├── rapports/
+│   │   ├── components/        # UI specifique
+│   │   ├── hooks/             # Hooks custom
+│   │   ├── actions/           # Server Actions ("use server")
+│   │   ├── services/          # Logique metier (testable)
+│   │   ├── queries/           # Data fetching (appeles depuis les SC)
+│   │   └── index.ts           # Barrel — API publique
+│   └── brief/
+│       └── ...
+├── components/                # Composants partages cross-feature
+│   ├── ui/                    # shadcn/ui
+│   └── icons/                 # Icones custom
+├── lib/                       # Utilitaires partages
+│   └── utils.ts               # cn()
+├── hooks/                     # Hooks partages (useDebounce, etc.)
+├── eslint.config.mjs          # ESLint v9 flat config
+├── postcss.config.mjs         # @tailwindcss/postcss
+├── next.config.mjs            # ESM
+├── components.json            # shadcn config
+└── tsconfig.json              # paths: @/* → ./*
+```
 
-- **Composants fonctionnels uniquement** — pas de classes.
-- **React Compiler** (expérimental, utilisable en production) : mémoïse automatiquement composants et valeurs. Quand activé, `useMemo`, `useCallback`, `React.memo` deviennent inutiles dans le code compilé. Adoption progressive via le plugin Babel — tester sur un projet avant de généraliser.
-- **`use()`** : nouveau hook pour lire des promesses et du context pendant le render. Remplace `useContext` — préférer `use(MyContext)` dans le nouveau code. Peut être appelé conditionnellement.
-- **`ref` comme prop** : `forwardRef` est déprécié. Accepter `ref` directement dans les props du composant.
-- **Context provider simplifié** : `<MyContext value={...}>` directement, plus besoin de `<MyContext.Provider>`.
-- **Formulaires** : `useActionState` (ex-`useFormState`) + `useFormStatus` + `useOptimistic` pour les Server Actions.
-- **Hooks custom** : garder les composants petits. Extraire la logique métier dans des hooks custom (`useXxx`).
-- **State management** : commencer par `useState` / `useReducer` + context. N'ajouter Zustand ou autre que si c'est justifié.
-- **Keys** : toujours une key stable et unique sur les listes. Jamais l'index sauf liste statique.
-- **Props** : destructurer dans la signature. Typer avec une `interface` (pas `type` sauf union/intersection).
-- **Composition over configuration** : préférer `children` et le pattern composé (`<Dialog><DialogTrigger>...`) aux props massives.
-- **Pas de logique dans le JSX** : extraire les conditions complexes dans des variables ou des sous-composants.
+### Regles de structure
+
+- **Pas de `src/` directory** — tout est a la racine, comme le standard Next.js 16 + shadcn.
+- **`app/` = routing uniquement** — les `page.tsx` sont des Server Components fins (~10-20 lignes) qui importent depuis `features/`.
+- **`features/` = logique par domaine** — chaque feature est autonome avec ses composants, hooks, actions, services.
+- **`components/` = UI partagee** — shadcn/ui, icones, theme provider.
+- **`lib/` = utilitaires** — `cn()`, constantes, validation env.
+
+---
+
+## Next.js (App Router) — Patterns modernes obligatoires
+
+> **Regle fondamentale** : toujours utiliser les patterns documentes dans la derniere version stable de Next.js. Ne pas ecrire de code legacy quand un pattern serveur natif existe.
+
+- **Server Components par defaut** — n'ajouter `"use client"` que quand c'est strictement necessaire.
+- **Data fetching dans les Server Components** — `async/await` directement. **Interdit** d'utiliser `useEffect` + `fetch()` pour charger des donnees.
+- **Streaming + `<Suspense>`** — wrapper les parties lentes dans `<Suspense fallback={...}>`.
+- **Server Actions pour toutes les mutations** :
+  - `useActionState` pour gerer l'etat formulaire
+  - `useFormStatus` pour les boutons submit
+  - `useOptimistic` pour les updates optimistes
+  - `<form action={serverAction}>` pour le progressive enhancement
+- **Route Handlers** (`app/api/`) reserves aux endpoints REST consommes par des clients externes ou webhooks. Pas pour les mutations internes.
+- **`after()`** pour executer du code apres la reponse (notifications, logging).
+- **Metadata** : `generateMetadata()` ou export `metadata`.
+- **`loading.tsx` / `error.tsx` / `not-found.tsx`** par segment de route.
+- **`next/image`** partout. Jamais de `<img>` brut.
+- **`next/font`** dans le root layout.
+- **`next.config.mjs`** en ESM.
+
+### Anti-patterns Next.js (INTERDIT)
+
+| Anti-pattern | Pattern moderne |
+|---|---|
+| `"use client"` + `useEffect` + `fetch()` pour charger des donnees | Server Component async |
+| `useState` + `onSubmit` + `fetch()` pour les mutations | Server Action + `useActionState` |
+| `loading` state manuel | `loading.tsx` + `<Suspense>` |
+| Route Handler POST pour mutation formulaire | Server Action + `revalidatePath` |
+| Page entiere en `"use client"` | SC parent + CC enfant interactif |
+
+---
+
+## React 19 — Patterns modernes obligatoires
+
+- **`ref` comme prop** — `forwardRef` est **interdit**. Utiliser `React.ComponentProps<"element">`.
+- **`use()` hook** — **obligatoire** pour lire du context (remplace `useContext`).
+- **Context simplifie** — `<MyContext value={...}>` directement, pas de `.Provider`.
+- **Formulaires** : `useActionState` + `useFormStatus` + `useOptimistic` + Server Actions.
+- **React Compiler** : memore automatiquement. `useMemo`/`useCallback`/`React.memo` deviennent inutiles.
+- **Composants petits** — extraire dans des hooks custom. Un fichier ne depasse pas ~200 lignes.
+
+### Anti-patterns React (INTERDIT)
+
+| Anti-pattern | Pattern moderne React 19 |
+|---|---|
+| `React.forwardRef()` | `ref` via `React.ComponentProps` |
+| `useContext(MyContext)` | `use(MyContext)` |
+| `<MyContext.Provider>` | `<MyContext value={...}>` |
+| `useState` + `onSubmit` + `fetch()` | `useActionState` + Server Action |
+| `useMemo`/`useCallback` partout | React Compiler |
+
+---
 
 ## TypeScript
 
-- **`strict: true`** dans le `tsconfig.json` — non négociable.
-- **Interfaces** pour les shapes d'objet, **types** pour les unions, intersections, et utilitaires.
-- **Pas de `any`** — utiliser `unknown` si le type n'est pas connu, puis narrower.
-- **Inférence** : laisser TS inférer quand c'est évident. Typer explicitement les signatures de fonctions publiques et les retours de fonctions complexes.
-- **Enums** : préférer `as const` satisfies ou les union types aux `enum` classiques.
-- **Zod** pour la validation runtime aux frontières (API inputs, form data, env vars). Inférer le type TS depuis le schema Zod (`z.infer<typeof schema>`).
-- **Pas de assertions non-null (`!`)** sauf cas exceptionnel documenté.
-- **Generics** : utiliser quand ça apporte de la réutilisabilité, pas pour montrer qu'on sait faire.
-
-## Tailwind CSS v4
-
-- **CSS-first config** : plus de `tailwind.config.js`. La configuration se fait dans le CSS avec la directive `@theme { ... }` pour les design tokens (couleurs, fonts, spacing).
-- **Import unique** : `@import "tailwindcss"` remplace les anciennes directives `@tailwind base/components/utilities`.
-- **Détection automatique** : plus besoin de configurer `content` — Tailwind v4 scanne automatiquement le projet.
-- **`cn()` helper** (clsx + tailwind-merge) pour merger les classes conditionnellement.
-- **Design tokens** dans `@theme` : couleurs, spacing, fonts. Ne pas hardcoder des valeurs arbitraires — utiliser le theme (`text-primary`).
-- **Responsive** : mobile-first (`sm:`, `md:`, `lg:`). Toujours partir du mobile.
-- **Dark mode** : utiliser le prefix `dark:`.
-- **Opacité** : syntaxe slash uniquement (`bg-black/50`), les anciennes classes `bg-opacity-*` n'existent plus.
-- **Pas de `@apply`** sauf dans les cas où c'est inévitable (styles globaux, composants tiers).
-- **Grouper visuellement** les classes : layout > sizing > spacing > typography > colors > effects.
-- **Tailwind Merge** gère les conflits — ne pas hésiter à exposer un `className` prop sur les composants réutilisables.
-- **Migration** : utiliser `@tailwindcss/upgrade` pour migrer un projet v3 vers v4.
-
-## shadcn/ui
-
-- **Ce n'est pas une dépendance** — c'est du code copié dans le projet. Le personnaliser librement.
-- **CLI** : `npx shadcn@latest add <component>` (le package s'appelle `shadcn`, plus `shadcn-ui`). Supporte Tailwind v4 nativement.
-- **Init** : `npx shadcn@latest init` pour setup un nouveau projet.
-- **Composition** : utiliser le pattern compound (`<Select><SelectTrigger><SelectValue>...`).
-- **Customisation** : modifier les fichiers dans `components/ui/` directement. C'est fait pour.
-- **CSS variables** pour le theming dans `globals.css` (ou via `@theme` en Tailwind v4). Respecter le naming shadcn (`--primary`, `--secondary`, etc.).
-- **Radix primitives** sous le capot — consulter la doc Radix pour les props d'accessibilité et les edge cases.
-- **Ne pas wrapper les composants shadcn** dans des abstractions inutiles. Les utiliser directement.
-- **Formulaires** : combiner avec `react-hook-form` + `zod` via le pattern `<Form>` de shadcn.
-
-## Neon (PostgreSQL serverless)
-
-- **Connection pooling** : toujours utiliser le connection string avec pooler (`-pooler` suffix) en production.
-- **Prisma** : configurer `directUrl` (sans pooler, pour migrations) + `url` (avec pooler, pour queries).
-- **Prisma adapter Neon** : `@prisma/adapter-neon` avec `@neondatabase/serverless` pour les edge runtimes (WebSocket/HTTP).
-- **Branching** : utiliser les branches Neon pour les previews / staging. Pas de DB partagée entre envs.
-- **Serverless driver** (`@neondatabase/serverless`) pour les edge functions si besoin. Sinon Prisma suffit.
-- **Migrations** : `prisma migrate dev` en local, `prisma migrate deploy` en CI/CD.
-- **Pas de raw queries** sauf pour des requêtes vraiment complexes que Prisma ne peut pas exprimer.
-
-## Auth.js v5 (NextAuth)
-
-- **Auth.js v5 est en beta** — installer `next-auth@beta` (la v5 n'est pas encore en release stable, `next-auth@latest` reste la v4). Malgré le tag beta, v5 est largement utilisé en production et c'est la version recommandée pour App Router.
-- **Config** dans `auth.ts` à la racine (ou `src/auth.ts`). Exporter `{ handlers, signIn, signOut, auth }`.
-- **Route handler** : `app/api/auth/[...nextauth]/route.ts` qui réexporte `handlers` (`GET`, `POST`).
-- **Middleware** : `auth` comme wrapper middleware pour protéger les routes. Configurer le `matcher`.
-- **Session** : préférer la stratégie `jwt` pour le serverless. `database` si besoin de sessions persistantes (défaut quand un adapter est configuré).
-- **Providers** : configurer dans `auth.ts`. Google, GitHub, Credentials, etc.
-- **Callbacks** : `jwt` et `session` callbacks pour enrichir le token/session avec des données custom (rôle, orgId, etc.).
-- **Prisma Adapter** : `@auth/prisma-adapter` pour persister users/accounts/sessions en DB.
-- **Protéger côté serveur** : `const session = await auth()` dans les Server Components / Server Actions. Ne pas se fier uniquement au middleware.
-- **Variables d'env** : `AUTH_SECRET` (obligatoire), `AUTH_URL` (auto-détecté en prod Vercel). Les anciens noms `NEXTAUTH_*` sont dépréciés.
-- **Edge compatible** : conçu pour fonctionner sur les edge runtimes.
+- **`strict: true`** — non negociable.
+- **Pas de `any`** — utiliser `unknown` + narrowing.
+- **Zod** pour la validation aux frontieres (API inputs, env vars).
+- **Pas d'enums** — `as const` ou union types.
+- **Pas d'assertions non-null (`!`)** sauf cas documente.
 
 ---
 
-## Architecture full-stack (Vertical Slices + Hybride pragmatique)
+## Tailwind CSS v4
 
-Next.js est volontairement agnostique sur l'architecture. Le pattern ci-dessous combine **Vertical Slices** (chaque feature est autonome) avec une organisation hybride inspirée de FSD et DDD, adaptée aux contraintes de l'App Router.
+- **`@import "tailwindcss"`** + **`@theme inline`** pour les design tokens.
+- **`oklch()`** pour les couleurs (pas `hsl()`).
+- **`tw-animate-css`** pour les animations (pas `tailwindcss-animate`).
+- **`cn()` helper** (clsx + tailwind-merge).
+- **Opacité slash** : `bg-black/50`. Les classes `bg-opacity-*` n'existent plus.
+- **Pas de `@apply`** — CSS natif uniquement.
+- **Pas de `tailwind.config.*`** — configuration dans le CSS via `@theme`.
+- **`postcss.config.mjs`** en ESM avec `@tailwindcss/postcss`.
 
-### Structure recommandée
+### Couleurs — tokens obligatoires (INTERDIT de hardcoder)
 
-```
-app/                              # Routing UNIQUEMENT — pages fines
-├── (public)/
-│   └── page.tsx                  # Compose depuis src/features/
-├── (dashboard)/
-│   ├── layout.tsx
-│   ├── campaigns/
-│   │   ├── page.tsx              # Import depuis features/campaigns
-│   │   ├── [id]/
-│   │   │   └── page.tsx
-│   │   ├── loading.tsx
-│   │   └── error.tsx
-│   └── bilans/
-│       └── page.tsx
-├── api/                          # Route Handlers (intégrations externes)
-│   ├── webhooks/
-│   └── auth/[...nextauth]/
-└── layout.tsx
+**Toutes les couleurs DOIVENT utiliser les tokens du thème.** Jamais de classes Tailwind avec numéros (`text-gray-500`, `bg-orange-50`) ni de hex inline (`from-[#F85A20]`).
 
-src/
-├── features/                     # Vertical slices par feature
-│   ├── campaigns/
-│   │   ├── components/           # UI spécifique à la feature
-│   │   │   ├── campaign-list.tsx
-│   │   │   ├── campaign-card.tsx
-│   │   │   └── create-campaign-dialog.tsx
-│   │   ├── actions/              # Server Actions (THIN)
-│   │   │   └── create-campaign.ts
-│   │   ├── services/             # Logique métier (THICK, testable)
-│   │   │   ├── campaign.service.ts
-│   │   │   └── campaign.service.test.ts
-│   │   ├── queries/              # Data fetching (Server Components)
-│   │   │   └── get-campaigns.ts
-│   │   ├── schemas/              # Validation Zod
-│   │   │   └── campaign.schema.ts
-│   │   ├── types.ts
-│   │   └── index.ts              # Barrel — API publique de la feature
-│   └── bilans/
-│       └── ...
-│
-├── entities/                     # Modèles de domaine partagés
-│   ├── campaign/
-│   │   ├── types.ts              # Types/interfaces du domaine
-│   │   └── utils.ts              # Helpers purement liés au domaine
-│   └── user/
-│       └── types.ts
-│
-├── shared/                       # Code réutilisable cross-feature
-│   ├── ui/                       # shadcn/ui + composants design system
-│   ├── hooks/                    # Hooks partagés (useDebounce, etc.)
-│   ├── lib/                      # Utilitaires (cn(), formatDate, etc.)
-│   └── config/                   # Constantes, env validation (Zod)
-│
-└── infrastructure/               # Services externes et adapters
-    ├── database/                 # Prisma client, helpers
-    ├── auth/                     # Config Auth.js (auth.ts)
-    └── api-clients/              # Clients API externes (GAM, Stripe, etc.)
-```
+| Usage | Token Tailwind | INTERDIT |
+|-------|----------------|----------|
+| Texte principal | `text-foreground` | `text-gray-900` |
+| Texte secondaire | `text-muted-foreground` | `text-gray-500` |
+| Texte moyen | `text-ev-gray-400` | `text-gray-700` |
+| Texte léger | `text-ev-gray-300` | `text-gray-600` |
+| Texte placeholder | `text-ev-gray-200` | `text-gray-400` |
+| Fond page | `bg-ev-gray-50` | `bg-gray-50`, `bg-gray-100` |
+| Bordure standard | `border-border` | `border-gray-200` |
+| Bordure légère | `border-ev-gray-100` | `border-gray-300` |
+| Orange principal | `text-orange` / `bg-orange` | `text-orange-500`, `bg-orange-500` |
+| Orange foncé | `text-orange-dark` / `bg-orange-dark` | `text-orange-700`, `bg-orange-600` |
+| Orange clair (fond) | `bg-orange-light` | `bg-orange-50`, `bg-orange-100` |
+| Gradient orange | `from-orange to-orange-dark` | `from-orange-500 to-orange-600` |
+| Bordure orange | `border-orange/30` | `border-orange-200` |
 
-### Règles clés
+**Pour les graphiques (Recharts)** : utiliser les constantes de `lib/constants/platform-colors.ts` (`CHART_COLORS.primary`, etc.) — seul endroit où le hex est toléré car Recharts ne supporte pas les CSS variables.
 
-- **`app/` = routing seulement.** Les `page.tsx` sont des compositions fines qui importent depuis `src/features/`. Pas de logique métier dans `app/`.
-- **Thin Actions, Thick Services.** Les Server Actions valident (Zod), appellent un service, et revalidate. La logique métier vit dans `services/` — testable, réutilisable (webhooks, cron, API routes).
-- **Un barrel `index.ts` par feature.** Il expose l'API publique du slice. Les autres features n'importent que via le barrel, jamais dans les fichiers internes.
-- **Pas d'imports cross-features.** Si deux features partagent un type ou une logique, l'extraire dans `entities/` ou `shared/`.
-- **`entities/` = domaine pur.** Types, interfaces, et helpers qui décrivent le métier sans dépendre de React ou Next.js.
-- **`infrastructure/` = le monde extérieur.** DB, auth, APIs tierces. Isolé pour être substituable.
+**Pour les librairies tierces** : configurer via `var(--primary)` et les CSS variables du thème dans `globals.css`, jamais de hex inline.
 
-### Thin Action → Thick Service (exemple)
+---
 
-```typescript
-// src/features/campaigns/actions/create-campaign.ts
-"use server"
+## shadcn/ui v4
 
-import { auth } from "@/infrastructure/auth"
-import { createCampaignSchema } from "../schemas/campaign.schema"
-import { createCampaign } from "../services/campaign.service"
-import { revalidatePath } from "next/cache"
+- **Package `shadcn` v4** installé en dépendance.
+- **`radix-ui`** unifié (pas les packages `@radix-ui/*` séparés).
+- **Composants dans `components/ui/`** — les personnaliser directement.
+- **Pattern `React.ComponentProps<"element">`** — pas de `forwardRef`.
+- **Formulaires** : `react-hook-form` + `zod` + composant `<Form>` shadcn.
+- **CSS variables** via `@theme inline` dans `globals.css`.
 
-export async function createCampaignAction(formData: FormData) {
-  const session = await auth()
-  if (!session) throw new Error("Unauthorized")
+### Composants shadcn obligatoires (INTERDIT de créer des composants maison)
 
-  const data = createCampaignSchema.parse(Object.fromEntries(formData))
-  await createCampaign(data, session.user.id)  // ← toute la logique est ici
-  revalidatePath("/campaigns")
-}
-```
+**Toujours utiliser les composants shadcn existants** (`components/ui/`) pour les éléments d'interface. Ne JAMAIS recréer un composant qui existe déjà dans shadcn.
 
-```typescript
-// src/features/campaigns/services/campaign.service.ts
-import { prisma } from "@/infrastructure/database"
-import type { CreateCampaignInput } from "../schemas/campaign.schema"
+| Besoin | Composant shadcn | INTERDIT |
+|--------|------------------|----------|
+| Bouton | `<Button>` | `<button className="...">` custom |
+| Champ texte | `<Input>` | `<input className="...">` custom |
+| Zone de texte | `<Textarea>` | `<textarea className="...">` custom |
+| Case à cocher | `<Checkbox>` | `<input type="checkbox">` custom |
+| Sélecteur | `<Select>` | `<select>` natif ou custom dropdown |
+| Dialogue | `<Dialog>` | Modal custom avec portail |
+| Popover | `<Popover>` | Dropdown custom |
+| Badge | `<Badge>` | `<span className="badge...">` custom |
+| Card | `<Card>` | `<div className="card...">` custom |
+| Tableau | `<Table>` | `<table className="...">` custom |
+| Formulaire | `<Form>` + `<FormField>` | `<form>` avec `useState` manuel |
+| Toast | `toast()` (sonner) | `alert()` ou notification custom |
+| Tabs | `<Tabs>` | Tabs custom avec `useState` |
+| Alert Dialog | `<AlertDialog>` | `window.confirm()` |
 
-export async function createCampaign(data: CreateCampaignInput, userId: string) {
-  // Logique métier pure — testable sans Next.js
-  return prisma.campaign.create({
-    data: { ...data, createdById: userId },
-  })
-}
-```
+**Règles :**
+- **Personnaliser** les composants shadcn via leurs `className` prop, pas en les recréant
+- **Régénérer** avec `npx shadcn@latest add <component> --overwrite` si un composant est corrompu
+- Après régénération, adapter au projet : `radix-ui` unifié (pas `@radix-ui/*`), `React.ComponentProps` (pas `forwardRef`)
+- Les variantes custom (ex: `variant="sold"` sur Badge) se définissent **dans** le composant shadcn, pas dans un composant séparé
 
-### Quand utiliser quoi
+---
 
-| Besoin | Emplacement |
-|---|---|
-| UI spécifique à une feature | `src/features/<name>/components/` |
-| Mutation depuis un formulaire | `src/features/<name>/actions/` → `services/` |
-| Data fetching (Server Component) | `src/features/<name>/queries/` |
-| Type partagé entre features | `src/entities/<domain>/types.ts` |
-| Composant UI générique | `src/shared/ui/` |
-| Hook réutilisable | `src/shared/hooks/` |
-| Client API externe | `src/infrastructure/api-clients/` |
-| Config DB / Prisma | `src/infrastructure/database/` |
+## Auth.js v5
+
+- **Config** : `NextAuth()` → `{ handlers, auth, signIn, signOut }`.
+- **`auth()`** dans les Server Components et Server Actions.
+- **Middleware** : `auth` comme wrapper.
+- **`AUTH_SECRET` / `AUTH_URL`** (pas les anciens `NEXTAUTH_*`).
+- **JWT strategy** pour le serverless.
+
+---
+
+## Prisma
+
+- **`directUrl` + `url`** configures.
+- **Client singleton** (global pattern).
+- **Pas de raw queries** sauf cas complexe justifie.
+
+---
+
+## Qualite de code
+
+- **ESLint v9** flat config (`eslint.config.mjs`) avec `eslint-config-next`.
+- **Prettier** avec `prettier-plugin-tailwindcss`.
+- **`pnpm`** comme package manager (jamais npm/yarn).
+- **`"type": "module"`** dans package.json.
 
 ---
 
 ## Principes transversaux
 
-1. **Colocation** — garder les fichiers proches de là où ils sont utilisés.
-2. **Pas d'abstraction prématurée** — dupliquer 2-3 fois avant d'extraire.
-3. **Fail fast** — valider les inputs tôt (Zod), crash plutôt que silently fail.
-4. **Conventions de nommage** : `PascalCase` composants, `camelCase` fonctions/variables, `kebab-case` fichiers/dossiers.
-5. **Un fichier = une responsabilité** — si un fichier dépasse ~200 lignes, se demander s'il faut split.
-6. **Accessibilité** — utiliser les éléments HTML sémantiques, tester au clavier, aria-labels quand nécessaire.
-7. **Env vars** — valider avec Zod au boot (`env.ts`). Jamais d'accès direct à `process.env` éparpillé dans le code.
+1. **Colocation** — fichiers proches de ou ils sont utilises.
+2. **Pas d'abstraction prematuree** — dupliquer 2-3 fois avant d'extraire.
+3. **Fail fast** — valider avec Zod, crash plutot que silently fail.
+4. **Nommage** : `PascalCase` composants, `camelCase` fonctions, `kebab-case` fichiers.
+5. **~200 lignes max** par fichier.
+6. **Env vars** — valider avec Zod. Jamais `process.env` direct.
 
 ---
 
-*Dernière mise à jour : mars 2026*
+*Derniere mise a jour : mars 2026*
